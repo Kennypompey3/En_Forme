@@ -1,22 +1,9 @@
 package com.example.enforme
 
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.NavigationBarItemDefaults
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SnackbarDuration
-import androidx.compose.material3.SnackbarHost
-import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
@@ -27,7 +14,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 sealed class Screen(val route: String, val label: String, val iconResId: Int) {
     object Home : Screen("tab/home", "Home", R.drawable.ic_nav_home)
@@ -47,7 +34,7 @@ private val items = listOf(
 fun HomeScreen(authViewModel: AuthViewModel = viewModel()) {
     val navController = rememberNavController()
 
-    // Shared Profile VM across tabs
+    // Shared profile VM (keeps bank/phone across tabs)
     val profileViewModel: ProfileViewModel =
         viewModel(factory = ProfileViewModelFactory(authViewModel))
     val profileState by profileViewModel.uiState.collectAsState()
@@ -56,27 +43,33 @@ fun HomeScreen(authViewModel: AuthViewModel = viewModel()) {
     val paymentViewModel: PaymentViewModel = viewModel()
     val paymentState by paymentViewModel.uiState.collectAsState()
 
+    // Snackbar
     val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
 
-    // Show snackbars based on payment state
+    // React to payment state changes
     LaunchedEffect(paymentState) {
         when (val s = paymentState) {
-            is PaymentUiState.Initiated -> {
-                snackbarHostState.showSnackbar(
-                    message = "Subscription initiated ✅",
-                    duration = SnackbarDuration.Short
-                )
-                // reset back to idle so it doesn't repeat on recomposition
-                delay(300)
+            is PaymentUiState.Error -> {
+                scope.launch { snackbarHostState.showSnackbar(s.message) }
                 paymentViewModel.reset()
             }
 
-            is PaymentUiState.Error -> {
-                snackbarHostState.showSnackbar(
-                    message = s.message,
-                    duration = SnackbarDuration.Long
-                )
-                delay(300)
+            is PaymentUiState.SubscriptionInitiated -> {
+                scope.launch {
+                    snackbarHostState.showSnackbar(
+                        "Subscription initiated. Check WhatsApp/SMS/Email to approve."
+                    )
+                }
+                paymentViewModel.reset()
+            }
+
+            is PaymentUiState.MerchInitiated -> {
+                scope.launch {
+                    snackbarHostState.showSnackbar(
+                        "Merch payment initiated. Follow the prompt sent to you."
+                    )
+                }
                 paymentViewModel.reset()
             }
 
@@ -115,43 +108,70 @@ fun HomeScreen(authViewModel: AuthViewModel = viewModel()) {
             }
         }
     ) { innerPadding ->
+
         NavHost(
             navController = navController,
             startDestination = Screen.Home.route,
             modifier = Modifier.padding(innerPadding)
         ) {
-            composable(Screen.Home.route) {
-                EnFormeHomeScreen()
-            }
+            composable(Screen.Home.route) { EnFormeHomeScreen() }
 
             composable(Screen.Merchandise.route) {
-                MerchandiseScreen()
-            }
 
-            composable(Screen.Programs.route) {
-                ProgramsFlowScreen(
-                    modifier = Modifier,
-                    paymentState = paymentState,
-                    onProgramClicked = { pkg ->
-                        val accountNumber = profileState.bankAccountNumber
+                // Pick ONE biller code for merch payments (use the one OnePipe gave you)
+                val merchBillerCode = "000739"
+
+                MerchandiseScreen(
+                    onCheckout = { totalKobo, cartItems ->
+
+                        val bankAccountNumber = profileState.bankAccountNumber
                         val phoneNumber = profileState.phoneNumber
                         val bankCode = profileState.bankCode
 
-                        if (accountNumber.isNotBlank() && phoneNumber.isNotBlank() && bankCode.isNotBlank()) {
+                        if (bankAccountNumber.isNotBlank() && phoneNumber.isNotBlank() && bankCode.isNotBlank()) {
+
+                            paymentViewModel.startMerchPayment(
+                                totalKobo = totalKobo,
+                                billerCode = merchBillerCode,
+                                accountNumber = bankAccountNumber,
+                                bankCode = bankCode,
+                                phoneNumber = phoneNumber,
+                                items = cartItems
+                            )
+
+                        } else {
+                            scope.launch {
+                                snackbarHostState.showSnackbar(
+                                    "Please set Bank, Account Number, and Phone in the Account tab first."
+                                )
+                            }
+                        }
+                    }
+                )
+            }
+
+
+            composable(Screen.Programs.route) {
+                ProgramsFlowScreen(
+                    paymentState = paymentState,
+                    onProgramClicked = { pkg ->
+                        val bankAccountNumber = profileState.bankAccountNumber
+                        val phoneNumber = profileState.phoneNumber
+                        val bankCode = profileState.bankCode
+
+                        if (bankAccountNumber.isNotBlank() && phoneNumber.isNotBlank() && bankCode.isNotBlank()) {
                             paymentViewModel.startSubscription(
                                 planCode = pkg.planCode,
-                                accountNumber = accountNumber,
+                                accountNumber = bankAccountNumber,
                                 phoneNumber = phoneNumber,
                                 bankCode = bankCode
                             )
                         } else {
-                            // Tell user to complete payment profile first
-                            // (We use snackbar to keep UI clean)
-                            // Note: snackbarHostState is captured from outer scope
-                            // so we can call it safely here via LaunchedEffect pattern:
-                            // We'll just show it immediately.
-                            // (compose allows calling showSnackbar in a launched effect only,
-                            // but this is fine because we're inside a composable route)
+                            scope.launch {
+                                snackbarHostState.showSnackbar(
+                                    "Please set Bank, Account Number, and Phone in the Account tab first."
+                                )
+                            }
                         }
                     }
                 )

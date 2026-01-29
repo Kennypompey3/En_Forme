@@ -1,13 +1,11 @@
 package com.example.enforme
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.BrokenImage
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.ShoppingCart
 import androidx.compose.material3.*
@@ -19,7 +17,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import coil.compose.SubcomposeAsyncImage
+import coil.compose.AsyncImage
 import coil.request.CachePolicy
 import coil.request.ImageRequest
 import kotlin.math.max
@@ -28,7 +26,7 @@ data class MerchProduct(
     val id: String,
     val name: String,
     val description: String,
-    val priceNaira: Int,
+    val priceNaira: Int, // now "hundreds" e.g. 8500 -> 85
     val tag: String,
     val imageUrl: String
 )
@@ -36,18 +34,14 @@ data class MerchProduct(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MerchandiseScreen(
-    // Later, we’ll wire this to OnePipe (send_invoice:virtual_account or collect)
     onCheckout: ((totalKobo: Int, items: List<Pair<MerchProduct, Int>>) -> Unit)? = null
 ) {
     val context = LocalContext.current
     val products = remember { merchProducts() }
 
-    // cart: productId -> qty
     val cart = remember { mutableStateMapOf<String, Int>() }
 
-    val cartCount by remember {
-        derivedStateOf { cart.values.sum() }
-    }
+    val cartCount by remember { derivedStateOf { cart.values.sum() } }
 
     val cartItems by remember {
         derivedStateOf {
@@ -89,18 +83,20 @@ fun MerchandiseScreen(
         ) {
             items(
                 items = products,
-                key = { it.id } // ✅ helps performance + less choppy
+                key = { it.id }
             ) { product ->
+                val imageRequest = remember(product.imageUrl) {
+                    ImageRequest.Builder(context)
+                        .data(product.imageUrl)
+                        .crossfade(true)
+                        .diskCachePolicy(CachePolicy.ENABLED)
+                        .memoryCachePolicy(CachePolicy.ENABLED)
+                        .build()
+                }
+
                 MerchCard(
                     product = product,
-                    imageRequest = remember(product.imageUrl) {
-                        ImageRequest.Builder(context)
-                            .data(product.imageUrl)
-                            .crossfade(true)
-                            .diskCachePolicy(CachePolicy.ENABLED)
-                            .networkCachePolicy(CachePolicy.ENABLED)
-                            .build()
-                    },
+                    imageRequest = imageRequest,
                     onAdd = {
                         val current = cart[product.id] ?: 0
                         cart[product.id] = current + 1
@@ -126,7 +122,7 @@ fun MerchandiseScreen(
                         if (next == 0) cart.remove(product.id) else cart[product.id] = next
                     },
                     onCheckout = {
-                        val totalKobo = totalNaira * 100
+                        val totalKobo = totalNaira * 100 // kobo
                         onCheckout?.invoke(totalKobo, cartItems)
                         showCartSheet = false
                     }
@@ -150,38 +146,14 @@ private fun MerchCard(
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
         Column {
-            SubcomposeAsyncImage(
+            AsyncImage(
                 model = imageRequest,
                 contentDescription = null,
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(190.dp)
                     .clip(RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)),
-                contentScale = ContentScale.Crop,
-                loading = {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .background(MaterialTheme.colorScheme.surfaceVariant),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        CircularProgressIndicator()
-                    }
-                },
-                error = {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .background(MaterialTheme.colorScheme.surfaceVariant),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            Icons.Default.BrokenImage,
-                            contentDescription = "Image failed",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
+                contentScale = ContentScale.Crop
             )
 
             Column(Modifier.padding(18.dp)) {
@@ -315,61 +287,55 @@ private fun CartSheet(
     }
 }
 
-private fun formatNaira(amount: Int): String = "₦" + "%,d".format(amount)
+private fun formatNaira(amount: Int): String = "₦$amount"
 
 private fun merchProducts(): List<MerchProduct> = listOf(
     MerchProduct(
         id = "p1",
         name = "En Forme Performance T-Shirt",
         description = "Breathable moisture-wicking fabric for optimal workout comfort",
-        priceNaira = 8500,
+        priceNaira = 85,
         tag = "Apparel",
-        // ✅ replaced (stable)
-        imageUrl = "https://upload.wikimedia.org/wikipedia/commons/d/d8/Fight_Corona_Virus_T-shirt_in_Kannada.jpg"
+        imageUrl = "https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?auto=format&fit=crop&w=1400&q=80"
     ),
     MerchProduct(
         id = "p2",
         name = "Premium Water Bottle",
         description = "1L insulated stainless steel bottle keeps drinks cold for 24 hours",
-        priceNaira = 3500,
+        priceNaira = 35,
         tag = "Accessories",
-        // ✅ replaced (stable)
-        imageUrl = "https://upload.wikimedia.org/wikipedia/commons/e/e4/Reusable_Steel_Water_Bottles.jpg"
+        imageUrl = "https://images.unsplash.com/photo-1523362628745-0c100150b504?auto=format&fit=crop&w=1400&q=80"
     ),
     MerchProduct(
         id = "p3",
         name = "Elite Gym Bag",
         description = "Spacious duffle with separate shoe compartment and laptop sleeve",
-        priceNaira = 15000,
+        priceNaira = 150,
         tag = "Accessories",
-        // ✅ replaced (stable)
-        imageUrl = "https://upload.wikimedia.org/wikipedia/commons/6/6a/Leather_duffel_bag_on_the_ground_%28Unsplash%29.jpg"
+        imageUrl = "https://images.unsplash.com/photo-1594223274512-ad4803739b7c?auto=format&fit=crop&w=1400&q=80"
     ),
     MerchProduct(
         id = "p4",
         name = "Premium Yoga Mat",
         description = "Non-slip eco-friendly mat with extra cushioning and carrying strap",
-        priceNaira = 12000,
+        priceNaira = 120,
         tag = "Equipment",
-        // ✅ replaced (stable)
-        imageUrl = "https://upload.wikimedia.org/wikipedia/commons/thumb/7/71/Woman_on_a_yoga_mat_next_to_a_window_doing_lower_back_exercises_-_50401795697.jpg/1280px-Woman_on_a_yoga_mat_next_to_a_window_doing_lower_back_exercises_-_50401795697.jpg"
+        imageUrl = "https://images.unsplash.com/photo-1593810450967-f9c42742e326?auto=format&fit=crop&w=1400&q=80"
     ),
     MerchProduct(
         id = "p5",
         name = "Resistance Band Set",
         description = "Complete set with 5 resistance levels for versatile training",
-        priceNaira = 9000,
+        priceNaira = 90,
         tag = "Equipment",
-        // (this one was working for you before; keeping it)
-        imageUrl = "https://images.unsplash.com/photo-1599058917212-d750089bc07e?auto=format&fit=crop&w=1400&q=80"
+        imageUrl = "https://images.unsplash.com/photo-1594385208974-2e75f8d3a09b?auto=format&fit=crop&w=1400&q=80"
     ),
     MerchProduct(
         id = "p6",
         name = "Whey Protein Powder",
         description = "2kg premium isolate protein with 25g per serving - chocolate flavor",
-        priceNaira = 25000,
+        priceNaira = 250,
         tag = "Supplements",
-        // ✅ replaced (stable)
-        imageUrl = "https://upload.wikimedia.org/wikipedia/commons/0/0b/Whey_Protein_Isolate.jpg"
+        imageUrl = "https://images.unsplash.com/photo-1622480916113-9000e6f273de?auto=format&fit=crop&w=1400&q=80"
     )
 )
