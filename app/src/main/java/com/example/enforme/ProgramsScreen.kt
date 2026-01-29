@@ -4,114 +4,415 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.rememberNavController
 
-// Data class to hold program information
-data class Program(
+// -------------------- Models --------------------
+
+data class GymPackage(
     val title: String,
     val description: String,
-    val price: String,
-    val planCode: String, // Unique identifier for the payment plan
+    val includes: List<String>,
+    val monthlyPriceLabel: String,
+    val amountNaira: Int,
+    val planCode: String,
     val imageResId: Int
 )
 
-// List of available programs
-val programs = listOf(
-    Program(
-        title = "Singles",
-        description = "This is our singles plan",
-        price = "₦100/month",
-        planCode = "plan-singles-001", // Example plan code
-        imageResId = R.drawable.singles_membership
+// -------------------- Sample Packages --------------------
+// Uses 3 independent images for the 3 program cards.
+// Put these images in res/drawable and name them:
+// program_weight_loss, program_muscle_building, program_endurance_stamina
+
+private fun formatNaira(amount: Int): String {
+    // Simple format: ₦43,750 etc
+    return "₦" + "%,d".format(amount)
+}
+
+private fun singlesPackages(): List<GymPackage> = listOf(
+    GymPackage(
+        title = "Weight Loss",
+        description = "A comprehensive program designed to help you shed pounds effectively.",
+        includes = listOf(
+            "Personalized meal plans",
+            "HIIT & Cardio sessions",
+            "Weekly progress tracking",
+            "Nutritionist consultation"
+        ),
+        monthlyPriceLabel = formatNaira(25_000),
+        amountNaira = 25_000,
+        planCode = "plan-singles-weightloss",
+        imageResId = R.drawable.program_weight_loss
     ),
-    Program(
-        title = "Couples",
-        description = "This is our couples plan",
-        price = "₦100/month",
-        planCode = "plan-couples-001", // Example plan code
-        imageResId = R.drawable.couples_membership
+    GymPackage(
+        title = "Muscle Building",
+        description = "Focus on hypertrophy and strength gains with expert-led training.",
+        includes = listOf(
+            "Customized lifting splits",
+            "Strength assessment",
+            "Supplementation guide",
+            "Form correction workshops"
+        ),
+        monthlyPriceLabel = formatNaira(30_000),
+        amountNaira = 30_000,
+        planCode = "plan-singles-muscle",
+        imageResId = R.drawable.program_muscle_building
+    ),
+    GymPackage(
+        title = "Endurance & Stamina",
+        description = "Boost cardiovascular health and stamina for sports or general fitness.",
+        includes = listOf(
+            "Run & Swim coaching",
+            "Circuit training",
+            "Heart rate monitoring",
+            "Recovery strategies"
+        ),
+        monthlyPriceLabel = formatNaira(20_000),
+        amountNaira = 20_000,
+        planCode = "plan-singles-endurance",
+        imageResId = R.drawable.program_endurance_stamina
     )
 )
 
+private fun couplesPackages(): List<GymPackage> {
+    return singlesPackages().map { s ->
+        val couplesAmount = Math.round(s.amountNaira * 1.75f) // +75%
+        val couplesPlanCode = when (s.planCode) {
+            "plan-singles-weightloss" -> "plan-couples-weightloss"
+            "plan-singles-muscle" -> "plan-couples-muscle"
+            "plan-singles-endurance" -> "plan-couples-endurance"
+            else -> s.planCode.replace("plan-singles", "plan-couples")
+        }
+
+        s.copy(
+            amountNaira = couplesAmount,
+            monthlyPriceLabel = formatNaira(couplesAmount),
+            planCode = couplesPlanCode
+        )
+    }
+}
+
+
+// -------------------- Routes --------------------
+
+private object ProgramsRoutes {
+    const val Chooser = "programs/chooser"
+    const val Singles = "programs/singles"
+    const val Couples = "programs/couples"
+}
+
+/**
+ * ✅ HomeScreen should call THIS for the Programs tab.
+ *
+ * paymentState is used only to show a loader if needed.
+ * When user taps "Join Program", we call onProgramClicked(pkg).
+ */
 @Composable
-fun ProgramsScreen(
+fun ProgramsFlowScreen(
     modifier: Modifier = Modifier,
     paymentState: PaymentUiState,
-    onProgramClicked: (Program) -> Unit // Callback for when a card is clicked
+    onProgramClicked: (GymPackage) -> Unit
 ) {
-    Box(modifier = Modifier.fillMaxSize()) {
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            items(programs.size) { index ->
-                val program = programs[index]
-                ProgramCard(
-                    program = program,
-                    // Pass the click event up to the parent (HomeScreen)
-                    onItemClick = { onProgramClicked(program) }
-                )
-            }
+    val navController = rememberNavController()
+
+    NavHost(
+        navController = navController,
+        startDestination = ProgramsRoutes.Chooser,
+        modifier = modifier.fillMaxSize()
+    ) {
+        composable(ProgramsRoutes.Chooser) {
+            MembershipChooserScreen(
+                onSinglesClick = { navController.navigate(ProgramsRoutes.Singles) },
+                onCouplesClick = { navController.navigate(ProgramsRoutes.Couples) }
+            )
         }
-        if (paymentState is PaymentUiState.Loading) {
-            CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
+
+        composable(ProgramsRoutes.Singles) {
+            MembershipPackagesScreen(
+                title = "Singles Membership",
+                packages = remember { singlesPackages() },
+                paymentState = paymentState,
+                onBack = { navController.popBackStack() },
+                onJoin = { pkg -> onProgramClicked(pkg) }
+            )
+        }
+
+        composable(ProgramsRoutes.Couples) {
+            MembershipPackagesScreen(
+                title = "Couples Membership",
+                packages = remember { couplesPackages() },
+                paymentState = paymentState,
+                onBack = { navController.popBackStack() },
+                onJoin = { pkg -> onProgramClicked(pkg) }
+            )
+        }
+    }
+}
+
+// -------------------- Screen 1: Chooser UI --------------------
+
+@Composable
+private fun MembershipChooserScreen(
+    onSinglesClick: () -> Unit,
+    onCouplesClick: () -> Unit
+) {
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(vertical = 24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        contentPadding = PaddingValues(bottom = 28.dp)
+    ) {
+        item {
+            Text(
+                text = "Choose Your Membership",
+                style = MaterialTheme.typography.headlineLarge,
+                fontWeight = FontWeight.ExtraBold,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp),
+                textAlign = TextAlign.Center
+            )
+
+            Spacer(modifier = Modifier.height(14.dp))
+
+            Text(
+                text = "Select the plan type that best fits your lifestyle.\n" +
+                        "Whether you're training solo, with a partner,\n" +
+                        "or optimizing your team's health.",
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp),
+                textAlign = TextAlign.Center
+            )
+
+            Spacer(modifier = Modifier.height(18.dp))
+        }
+
+        item {
+            NarrowMembershipCard(
+                imageResId = R.drawable.singles_membership,
+                headline = "Individual Goals focused on\nPersonal goals and Self-\nImprovement",
+                buttonLabel = "Singles Membership",
+                onClick = onSinglesClick
+            )
+        }
+
+        item { Spacer(modifier = Modifier.height(18.dp)) }
+
+        item {
+            NarrowMembershipCard(
+                imageResId = R.drawable.couples_membership,
+                headline = "Train together with a Partner. Shared\nGoals, Shared Success, Better value.",
+                buttonLabel = "Couples Membership",
+                onClick = onCouplesClick
+            )
         }
     }
 }
 
 @Composable
-fun ProgramCard(
-    program: Program,
-    onItemClick: () -> Unit // The card now accepts a simple click lambda
+private fun NarrowMembershipCard(
+    imageResId: Int,
+    headline: String,
+    buttonLabel: String,
+    onClick: () -> Unit
+) {
+    Box(
+        modifier = Modifier.fillMaxWidth(),
+        contentAlignment = Alignment.Center
+    ) {
+        Card(
+            modifier = Modifier
+                .padding(horizontal = 20.dp)     // ✅ space to sides like concept
+                .widthIn(max = 420.dp)           // ✅ keeps card “narrow”
+                .fillMaxWidth()
+                .clickable { onClick() },
+            shape = RoundedCornerShape(28.dp),
+            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+        ) {
+            Column {
+                Image(
+                    painter = painterResource(id = imageResId),
+                    contentDescription = null,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(260.dp),
+                    contentScale = ContentScale.Crop
+                )
+
+                Surface(color = MaterialTheme.colorScheme.surfaceVariant) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(18.dp)
+                    ) {
+                        Text(
+                            text = headline,
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold
+                        )
+
+                        Spacer(modifier = Modifier.height(14.dp))
+
+                        Button(
+                            onClick = onClick,
+                            shape = RoundedCornerShape(16.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(52.dp)
+                        ) {
+                            Text(buttonLabel)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// -------------------- Screen 2: Packages list --------------------
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun MembershipPackagesScreen(
+    title: String,
+    packages: List<GymPackage>,
+    paymentState: PaymentUiState,
+    onBack: () -> Unit,
+    onJoin: (GymPackage) -> Unit
+) {
+    Scaffold(
+        topBar = {
+            CenterAlignedTopAppBar(
+                title = { Text(title) },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.Default.ArrowBack, contentDescription = "Back")
+                    }
+                }
+            )
+        }
+    ) { padding ->
+        Box(modifier = Modifier.fillMaxSize().padding(padding)) {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(horizontal = 20.dp, vertical = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                items(packages) { pkg ->
+                    PackageCard(
+                        pkg = pkg,
+                        onJoin = { onJoin(pkg) }
+                    )
+                }
+            }
+
+            if (paymentState is PaymentUiState.Loading) {
+                CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
+            }
+        }
+    }
+}
+
+@Composable
+private fun PackageCard(
+    pkg: GymPackage,
+    onJoin: () -> Unit
 ) {
     Card(
         modifier = Modifier
+            .padding(horizontal = 8.dp)          // ✅ a little extra spacing to match concept
+            .widthIn(max = 420.dp)
             .fillMaxWidth()
-            .clickable { onItemClick() }, // Execute the lambda on click
-        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+            .clip(RoundedCornerShape(24.dp)),
+        shape = RoundedCornerShape(24.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
         Column {
             Image(
-                painter = painterResource(id = program.imageResId),
-                contentDescription = program.title,
+                painter = painterResource(id = pkg.imageResId),
+                contentDescription = null,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(200.dp)
-                    .clip(RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp)),
+                    .height(180.dp),
                 contentScale = ContentScale.Crop
             )
-            Column(modifier = Modifier.padding(16.dp)) {
+
+            Column(modifier = Modifier.padding(18.dp)) {
                 Text(
-                    text = program.title,
-                    fontSize = 20.sp,
+                    text = pkg.title,
+                    style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.Bold
                 )
-                Spacer(modifier = Modifier.height(4.dp))
+                Spacer(Modifier.height(8.dp))
+
                 Text(
-                    text = program.price,
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.primary // Use your theme's primary color
+                    text = pkg.description,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = program.description,
-                    fontSize = 14.sp,
-                    color = Color.Gray
-                )
+
+                Spacer(Modifier.height(14.dp))
+                Text("Includes:", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                Spacer(Modifier.height(10.dp))
+
+                pkg.includes.forEach { item ->
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.CheckCircle,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                        Spacer(Modifier.width(10.dp))
+                        Text(item, style = MaterialTheme.typography.bodyMedium)
+                    }
+                    Spacer(Modifier.height(8.dp))
+                }
+
+                Spacer(Modifier.height(14.dp))
+                Divider(color = MaterialTheme.colorScheme.surfaceVariant)
+                Spacer(Modifier.height(14.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.Bottom
+                ) {
+                    Text("Monthly", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(pkg.monthlyPriceLabel, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                }
+
+                Spacer(Modifier.height(12.dp))
+
+                Button(
+                    onClick = onJoin,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(52.dp),
+                    shape = RoundedCornerShape(16.dp)
+                ) {
+                    Text("Join Program")
+                }
             }
         }
     }

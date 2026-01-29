@@ -17,6 +17,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
+import java.util.concurrent.TimeUnit
 
 // -------------------- UI State --------------------
 sealed class PaymentUiState {
@@ -48,7 +49,12 @@ class PaymentViewModel : ViewModel() {
         private const val BACKEND_BASE_URL = "http://192.168.1.6:8080"
     }
 
-    private val client = OkHttpClient()
+    private val client = OkHttpClient.Builder()
+        .connectTimeout(30, TimeUnit.SECONDS)
+        .readTimeout(60, TimeUnit.SECONDS)
+        .writeTimeout(60, TimeUnit.SECONDS)
+        .retryOnConnectionFailure(true)
+        .build()
     private val auth = Firebase.auth
     private val db = Firebase.firestore
 
