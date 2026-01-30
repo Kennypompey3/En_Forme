@@ -59,7 +59,7 @@ class PaymentViewModel : ViewModel() {
          * Use your PC's LAN IP (the machine running Node), not "localhost".
          * Example: "http://192.168.1.6:8080"
          */
-        private const val BACKEND_BASE_URL = "http://192.168.1.6:8080"
+        private const val BACKEND_BASE_URL = "https://enforme-backend.onrender.com"
     }
 
     private val client = OkHttpClient.Builder()

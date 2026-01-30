@@ -23,7 +23,8 @@ import androidx.compose.ui.unit.dp
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
-import kotlin.math.roundToInt
+import java.text.NumberFormat
+import java.util.Locale
 
 // -------------------- Models --------------------
 
@@ -31,32 +32,19 @@ data class GymPackage(
     val title: String,
     val description: String,
     val includes: List<String>,
-    val monthlyPriceLabel: String,
-    val amountKobo: Int,
+    val amountNaira: Int,          // ✅ final monthly amount shown to customer
     val planCode: String,
     val imageResId: Int
 )
 
-// -------------------- Prices now in "hundreds" --------------------
-// Example: 25,000 -> 250
-private const val WL_SINGLE = 250
-private const val MB_SINGLE = 300
-private const val ES_SINGLE = 200
+// -------------------- FINAL PRICES (match backend & customer prompts) --------------------
+private const val WL_SINGLE_FINAL = 300
+private const val MB_SINGLE_FINAL = 300
+private const val ES_SINGLE_FINAL = 200
 
-private fun plus75Percent(base: Int): Int {
-    // round( base * 1.75 )
-    return (base * 1.75f).roundToInt()
-}
-
-// Couples (rounded)
-private val WL_COUPLES = plus75Percent(WL_SINGLE) // 438
-private val MB_COUPLES = plus75Percent(MB_SINGLE) // 525
-private val ES_COUPLES = plus75Percent(ES_SINGLE) // 350
-
-// -------------------- Packages --------------------
-// Uses 3 independent images for the 3 program cards.
-// Put these in res/drawable and name them:
-// program_weight_loss, program_muscle_building, program_endurance_stamina
+private const val WL_COUPLES_FINAL = 500
+private const val MB_COUPLES_FINAL = 600
+private const val ES_COUPLES_FINAL = 400
 
 private fun singlesPackages(): List<GymPackage> = listOf(
     GymPackage(
@@ -68,8 +56,7 @@ private fun singlesPackages(): List<GymPackage> = listOf(
             "Weekly progress tracking",
             "Nutritionist consultation"
         ),
-        monthlyPriceLabel = "₦$WL_SINGLE",
-        amountKobo = WL_SINGLE * 100,
+        amountNaira = WL_SINGLE_FINAL,
         planCode = "plan-singles-weightloss",
         imageResId = R.drawable.program_weight_loss
     ),
@@ -82,8 +69,7 @@ private fun singlesPackages(): List<GymPackage> = listOf(
             "Supplementation guide",
             "Form correction workshops"
         ),
-        monthlyPriceLabel = "₦$MB_SINGLE",
-        amountKobo = MB_SINGLE * 100,
+        amountNaira = MB_SINGLE_FINAL,
         planCode = "plan-singles-muscle",
         imageResId = R.drawable.program_muscle_building
     ),
@@ -96,8 +82,7 @@ private fun singlesPackages(): List<GymPackage> = listOf(
             "Heart rate monitoring",
             "Recovery strategies"
         ),
-        monthlyPriceLabel = "₦$ES_SINGLE",
-        amountKobo = ES_SINGLE * 100,
+        amountNaira = ES_SINGLE_FINAL,
         planCode = "plan-singles-endurance",
         imageResId = R.drawable.program_endurance_stamina
     )
@@ -113,8 +98,7 @@ private fun couplesPackages(): List<GymPackage> = listOf(
             "Weekly progress tracking",
             "Nutritionist consultation"
         ),
-        monthlyPriceLabel = "₦$WL_COUPLES",
-        amountKobo = WL_COUPLES * 100,
+        amountNaira = WL_COUPLES_FINAL,
         planCode = "plan-couples-weightloss",
         imageResId = R.drawable.program_weight_loss
     ),
@@ -127,8 +111,7 @@ private fun couplesPackages(): List<GymPackage> = listOf(
             "Supplementation guide",
             "Form correction workshops"
         ),
-        monthlyPriceLabel = "₦$MB_COUPLES",
-        amountKobo = MB_COUPLES * 100,
+        amountNaira = MB_COUPLES_FINAL,
         planCode = "plan-couples-muscle",
         imageResId = R.drawable.program_muscle_building
     ),
@@ -141,8 +124,7 @@ private fun couplesPackages(): List<GymPackage> = listOf(
             "Heart rate monitoring",
             "Recovery strategies"
         ),
-        monthlyPriceLabel = "₦$ES_COUPLES",
-        amountKobo = ES_COUPLES * 100,
+        amountNaira = ES_COUPLES_FINAL,
         planCode = "plan-couples-endurance",
         imageResId = R.drawable.program_endurance_stamina
     )
@@ -156,10 +138,6 @@ private object ProgramsRoutes {
     const val Couples = "programs/couples"
 }
 
-/**
- * HomeScreen calls THIS for the Programs tab.
- * When user taps "Join Program", we call onProgramClicked(pkg).
- */
 @Composable
 fun ProgramsFlowScreen(
     modifier: Modifier = Modifier,
@@ -356,10 +334,7 @@ private fun MembershipPackagesScreen(
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 items(packages, key = { it.planCode }) { pkg ->
-                    PackageCard(
-                        pkg = pkg,
-                        onJoin = { onJoin(pkg) }
-                    )
+                    PackageCard(pkg = pkg, onJoin = { onJoin(pkg) })
                 }
             }
 
@@ -435,7 +410,7 @@ private fun PackageCard(
                     verticalAlignment = Alignment.Bottom
                 ) {
                     Text("Monthly", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text(pkg.monthlyPriceLabel, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                    Text(formatNaira(pkg.amountNaira), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                 }
 
                 Spacer(Modifier.height(12.dp))
@@ -452,4 +427,10 @@ private fun PackageCard(
             }
         }
     }
+}
+
+// -------------------- money formatting --------------------
+private fun formatNaira(amount: Int): String {
+    val nf = NumberFormat.getNumberInstance(Locale("en", "NG"))
+    return "₦${nf.format(amount)}"
 }

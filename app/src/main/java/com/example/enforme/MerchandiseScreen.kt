@@ -20,13 +20,16 @@ import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import coil.request.CachePolicy
 import coil.request.ImageRequest
+import java.text.NumberFormat
+import java.util.Locale
+import kotlin.math.ceil
 import kotlin.math.max
 
 data class MerchProduct(
     val id: String,
     val name: String,
     val description: String,
-    val priceNaira: Int, // now "hundreds" e.g. 8500 -> 85
+    val priceNaira: Int, // base price; UI will show FINAL price (rounded up to hundreds)
     val tag: String,
     val imageUrl: String
 )
@@ -34,11 +37,11 @@ data class MerchProduct(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MerchandiseScreen(
+    // ✅ Keep your existing signature so HomeScreen.kt doesn't need big changes
     onCheckout: ((totalKobo: Int, items: List<Pair<MerchProduct, Int>>) -> Unit)? = null
 ) {
     val context = LocalContext.current
     val products = remember { merchProducts() }
-
     val cart = remember { mutableStateMapOf<String, Int>() }
 
     val cartCount by remember { derivedStateOf { cart.values.sum() } }
@@ -52,8 +55,11 @@ fun MerchandiseScreen(
         }
     }
 
-    val totalNaira by remember {
-        derivedStateOf { cartItems.sumOf { (p, qty) -> p.priceNaira * qty } }
+    // ✅ FINAL total in NAIRA (rounded item prices)
+    val finalTotalNaira by remember {
+        derivedStateOf {
+            cartItems.sumOf { (p, qty) -> roundUpToHundreds(p.priceNaira) * qty }
+        }
     }
 
     var showCartSheet by remember { mutableStateOf(false) }
@@ -81,10 +87,7 @@ fun MerchandiseScreen(
             contentPadding = PaddingValues(horizontal = 20.dp, vertical = 16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            items(
-                items = products,
-                key = { it.id }
-            ) { product ->
+            items(products, key = { it.id }) { product ->
                 val imageRequest = remember(product.imageUrl) {
                     ImageRequest.Builder(context)
                         .data(product.imageUrl)
@@ -111,7 +114,7 @@ fun MerchandiseScreen(
             ModalBottomSheet(onDismissRequest = { showCartSheet = false }) {
                 CartSheet(
                     cartItems = cartItems,
-                    totalNaira = totalNaira,
+                    totalNaira = finalTotalNaira,
                     onIncrease = { product ->
                         val current = cart[product.id] ?: 0
                         cart[product.id] = current + 1
@@ -122,8 +125,15 @@ fun MerchandiseScreen(
                         if (next == 0) cart.remove(product.id) else cart[product.id] = next
                     },
                     onCheckout = {
-                        val totalKobo = totalNaira * 100 // kobo
-                        onCheckout?.invoke(totalKobo, cartItems)
+                        // ✅ what OnePipe gets = FINAL total in KOBO
+                        val totalKobo = finalTotalNaira * 100
+
+                        // ✅ send items with FINAL prices too (so backend payload matches UI)
+                        val finalizedItems = cartItems.map { (p, qty) ->
+                            p.copy(priceNaira = roundUpToHundreds(p.priceNaira)) to qty
+                        }
+
+                        onCheckout?.invoke(totalKobo, finalizedItems)
                         showCartSheet = false
                     }
                 )
@@ -138,6 +148,8 @@ private fun MerchCard(
     imageRequest: ImageRequest,
     onAdd: () -> Unit
 ) {
+    val finalPrice = roundUpToHundreds(product.priceNaira)
+
     Card(
         modifier = Modifier
             .widthIn(max = 420.dp)
@@ -187,7 +199,7 @@ private fun MerchCard(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = formatNaira(product.priceNaira),
+                        text = formatNaira(finalPrice),
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold
                     )
@@ -235,6 +247,8 @@ private fun CartSheet(
         }
 
         cartItems.forEach { (p, qty) ->
+            val finalPrice = roundUpToHundreds(p.priceNaira)
+
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -245,7 +259,7 @@ private fun CartSheet(
                 Column(Modifier.weight(1f)) {
                     Text(p.name, fontWeight = FontWeight.SemiBold)
                     Text(
-                        "${formatNaira(p.priceNaira)} × $qty",
+                        "${formatNaira(finalPrice)} × $qty",
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
@@ -287,7 +301,20 @@ private fun CartSheet(
     }
 }
 
-private fun formatNaira(amount: Int): String = "₦$amount"
+// -------------------- money helpers --------------------
+
+private fun roundUpToHundreds(naira: Int): Int {
+    if (naira <= 0) return 0
+    return (ceil(naira / 100.0) * 100).toInt()
+}
+
+private fun formatNaira(amount: Int): String {
+    val nf = NumberFormat.getNumberInstance(Locale("en", "NG"))
+    return "₦${nf.format(amount)}"
+}
+
+// -------------------- data --------------------
+// Keep base prices here; UI rounds to final “hundreds” so it matches WhatsApp/SMS/Email.
 
 private fun merchProducts(): List<MerchProduct> = listOf(
     MerchProduct(
